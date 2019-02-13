@@ -11,3 +11,6 @@ Relevant reads:
 [Machine Learning Methods for Climbing Route Classification](http://cs229.stanford.edu/proj2017/final-reports/5232206.pdf)
 
 
+Repo structure:
+
+autoencoder/: tutorial on VAEs and CVAEs

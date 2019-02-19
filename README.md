@@ -14,3 +14,6 @@ Relevant reads:
 Repo structure:
 
 autoencoder/: tutorial on VAEs and CVAEs
+
+
+[Weekly sync](https://docs.google.com/document/d/1B3Mo1C-zYg5-EoQoLhTrRd-cdgVfflhsij1-ZslY21g/edit?usp=sharing)

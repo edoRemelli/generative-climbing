@@ -11,15 +11,13 @@ As a first step towards this ambitious goal we will consider a setting where the
 
 ## Relevant reads: 
 
+Let's put here all relevant reads for the project:
+
 [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
 
 [Learning Structured Output Representation using Deep Conditional Generative Models](https://papers.nips.cc/paper/5775-learning-structured-output-representation-using-deep-conditional-generative-models)
 
 [Machine Learning Methods for Climbing Route Classification](http://cs229.stanford.edu/proj2017/final-reports/5232206.pdf)
-
-## Repo structure:
-
-autoencoder/: tutorial on VAEs and CVAEs
 
 ## Weekly sync:
 

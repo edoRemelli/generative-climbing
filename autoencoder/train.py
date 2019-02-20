@@ -28,13 +28,15 @@ def main(args):
 
     ts = time.time()
 
+
+    """Load the dataset"""
     dataset = MNIST(
         root='data', train=True, transform=transforms.ToTensor(),
         download=True)
-    #dataset.to('cuda')
     data_loader = DataLoader(
         dataset=dataset, batch_size=args.batch_size, shuffle=True)
 
+    """Define the loss"""
     def loss_fn(recon_x, x, mean, log_var):
         BCE = torch.nn.functional.binary_cross_entropy(
             recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
@@ -49,6 +51,7 @@ def main(args):
         conditional=args.conditional,
         num_labels=10 if args.conditional else 0).to(device)
 
+    """Define the optimizer"""
     optimizer = torch.optim.Adam(vae.parameters(), lr=args.learning_rate)
 
     logs = defaultdict(list)
@@ -58,9 +61,10 @@ def main(args):
         tracker_epoch = defaultdict(lambda: defaultdict(dict))
 
         for iteration, (x, y) in enumerate(data_loader):
-
+            """Send data to GPU"""
             x, y = x.to(device), y.to(device)
 
+            """CVAE or VAE generates data"""
             if args.conditional:
                 recon_x, mean, log_var, z = vae(x, y)
             else:
@@ -71,19 +75,27 @@ def main(args):
                 tracker_epoch[id]['x'] = z[i, 0].item()
                 tracker_epoch[id]['y'] = z[i, 1].item()
                 tracker_epoch[id]['label'] = yi.item()
-
+            
+            """Compute loss"""
             loss = loss_fn(recon_x, x, mean, log_var)
+            """Compute KL divergence and binary crossentropy"""
+            diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+            bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+            
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             logs['loss'].append(loss.item())
+            logs['KL divergence'].append(-diverge.item())
+            logs['binary cross entropy'].append(bce.item())
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
-                print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f}".format(
-                    epoch, args.epochs, iteration, len(data_loader)-1, loss.item()))
-
+                print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} BCE {:f}".format(
+                    epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), bce.item()))
+                
+                """Create images from only latent variable"""
                 if args.conditional:
                     c = torch.arange(0, 10).long().unsqueeze(1)
                     x = vae.inference(n=c.size(0), c=c)
@@ -112,7 +124,8 @@ def main(args):
                     dpi=300)
                 plt.clf()
                 plt.close('all')
-
+        
+        """Print the points of the latent space"""
         df = pd.DataFrame.from_dict(tracker_epoch, orient='index')
         g = sns.lmplot(
             x='x', y='y', hue='label', data=df.groupby('label').head(100),
@@ -120,7 +133,20 @@ def main(args):
         g.savefig(os.path.join(
             args.fig_root, str(ts), "E{:d}-Dist.png".format(epoch)),
             dpi=300)
-
+        
+        
+    """Print curves for loss, KL divergence and BCE"""
+    plt.clf()
+    plt.plot(logs['loss'], label='Loss')
+    plt.savefig(os.path.join(args.fig_root, str(ts),"loss_summary.png"),dpi=300)
+    
+    plt.clf()
+    plt.plot(logs['KL divergence'], label='KL divergence')
+    plt.savefig(os.path.join(args.fig_root, str(ts),"KL_summary.png"),dpi=300)
+    
+    plt.clf()
+    plt.plot(logs['binary cross entropy'], label='Binary Cross Entropy')
+    plt.savefig(os.path.join(args.fig_root, str(ts),"BCE_summary.png"),dpi=300)
 
 if __name__ == '__main__':
 

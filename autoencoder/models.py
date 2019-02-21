@@ -7,12 +7,14 @@ from utils import idx2onehot
 class VAE(nn.Module):
 
     def __init__(self, encoder_layer_sizes, latent_size, decoder_layer_sizes,
-                 conditional=False, num_labels=0):
+                 conditional=False, variational = False, num_labels=0):
 
         super().__init__()
 
         if conditional:
             assert num_labels > 0
+        
+        self.variational = variational
 
         assert type(encoder_layer_sizes) == list
         assert type(latent_size) == int
@@ -21,9 +23,9 @@ class VAE(nn.Module):
         self.latent_size = latent_size
 
         self.encoder = Encoder(
-            encoder_layer_sizes, latent_size, conditional, num_labels)
+            encoder_layer_sizes, latent_size, conditional, variational, num_labels)
         self.decoder = Decoder(
-            decoder_layer_sizes, latent_size, conditional, num_labels)
+            decoder_layer_sizes, latent_size, conditional, variational, num_labels)
 
     def forward(self, x, c=None):
 
@@ -31,16 +33,24 @@ class VAE(nn.Module):
             x = x.view(-1, 28*28)
 
         batch_size = x.size(0)
+        
+        """If variational, we compute gaussian parameters"""
+        if self.variational:
 
-        means, log_var = self.encoder(x, c)
-
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn([batch_size, self.latent_size])
-        z = eps * std + means
-
-        recon_x = self.decoder(z, c)
-
-        return recon_x, means, log_var, z
+            means, log_var = self.encoder(x, c)
+    
+            std = torch.exp(0.5 * log_var)
+            eps = torch.randn([batch_size, self.latent_size])
+            z = eps * std + means
+    
+            recon_x = self.decoder(z, c)
+    
+            return recon_x, means, log_var, z     
+        """If not variational, we just encode z and reconstruct x from z"""
+        z = self.encoder(x,c)
+        recon_x = self.decoder(z,c)
+            
+        return recon_x, z
 
     def inference(self, n=1, c=None):
 
@@ -54,11 +64,12 @@ class VAE(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self, layer_sizes, latent_size, conditional, num_labels):
+    def __init__(self, layer_sizes, latent_size, conditional, variational, num_labels):
 
         super().__init__()
 
         self.conditional = conditional
+        self.variational = variational
         if self.conditional:
             layer_sizes[0] += num_labels
 
@@ -69,8 +80,11 @@ class Encoder(nn.Module):
                 name="L{:d}".format(i), module=nn.Linear(in_size, out_size))
             self.MLP.add_module(name="A{:d}".format(i), module=nn.ReLU())
 
-        self.linear_means = nn.Linear(layer_sizes[-1], latent_size)
-        self.linear_log_var = nn.Linear(layer_sizes[-1], latent_size)
+        if self.variational:
+            self.linear_means = nn.Linear(layer_sizes[-1], latent_size)
+            self.linear_log_var = nn.Linear(layer_sizes[-1], latent_size)
+        else:
+            self.linear_z = nn.Linear(layer_sizes[-1], latent_size)
 
     def forward(self, x, c=None):
 
@@ -79,6 +93,9 @@ class Encoder(nn.Module):
             x = torch.cat((x, c), dim=-1)
 
         x = self.MLP(x)
+        
+        if not self.variational:
+            return self.linear_z(x)
 
         means = self.linear_means(x)
         log_vars = self.linear_log_var(x)
@@ -86,15 +103,17 @@ class Encoder(nn.Module):
         return means, log_vars
 
 
+
 class Decoder(nn.Module):
 
-    def __init__(self, layer_sizes, latent_size, conditional, num_labels):
+    def __init__(self, layer_sizes, latent_size, conditional, variational, num_labels):
 
         super().__init__()
 
         self.MLP = nn.Sequential()
 
         self.conditional = conditional
+        self.variational = variational
         if self.conditional:
             input_size = latent_size + num_labels
         else:
@@ -113,7 +132,7 @@ class Decoder(nn.Module):
         if self.conditional:
             c = idx2onehot(c, n=10)
             z = torch.cat((z, c), dim=-1)
-
+            
         x = self.MLP(z)
 
         return x

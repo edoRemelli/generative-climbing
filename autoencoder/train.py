@@ -48,7 +48,7 @@ def main(args):
         encoder_layer_sizes=args.encoder_layer_sizes,
         latent_size=args.latent_size,
         decoder_layer_sizes=args.decoder_layer_sizes,
-        conditional=args.conditional,
+        conditional=args.conditional, variational = args.variational,
         num_labels=10 if args.conditional else 0).to(device)
 
     """Define the optimizer"""
@@ -67,8 +67,10 @@ def main(args):
             """CVAE or VAE generates data"""
             if args.conditional:
                 recon_x, mean, log_var, z = vae(x, y)
-            else:
+            elif args.variational:
                 recon_x, mean, log_var, z = vae(x)
+            else:
+                recon_x, z = vae(x)
 
             for i, yi in enumerate(y):
                 id = len(tracker_epoch)
@@ -76,11 +78,18 @@ def main(args):
                 tracker_epoch[id]['y'] = z[i, 1].item()
                 tracker_epoch[id]['label'] = yi.item()
             
+            """TODO compute right loss in non variationnal case"""
             """Compute loss"""
-            loss = loss_fn(recon_x, x, mean, log_var)
-            """Compute KL divergence and binary crossentropy"""
-            diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-            bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+            if args.variational:                
+                loss = loss_fn(recon_x, x, mean, log_var)
+                """Compute KL divergence and binary crossentropy"""
+                diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+                bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+                logs['KL divergence'].append(-diverge.item())
+                logs['binary cross entropy'].append(bce.item())
+                
+            else:
+                loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
             
 
             optimizer.zero_grad()
@@ -88,12 +97,15 @@ def main(args):
             optimizer.step()
 
             logs['loss'].append(loss.item())
-            logs['KL divergence'].append(-diverge.item())
-            logs['binary cross entropy'].append(bce.item())
+            
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
-                print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} BCE {:f}".format(
-                    epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), bce.item()))
+                if args.variational:
+                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} BCE {:f}".format(
+                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), bce.item()))
+                else:
+                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} ".format(
+                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item()))
                 
                 """Create images from only latent variable"""
                 if args.conditional:
@@ -140,13 +152,14 @@ def main(args):
     plt.plot(logs['loss'], label='Loss')
     plt.savefig(os.path.join(args.fig_root, str(ts),"loss_summary.png"),dpi=300)
     
-    plt.clf()
-    plt.plot(logs['KL divergence'], label='KL divergence')
-    plt.savefig(os.path.join(args.fig_root, str(ts),"KL_summary.png"),dpi=300)
-    
-    plt.clf()
-    plt.plot(logs['binary cross entropy'], label='Binary Cross Entropy')
-    plt.savefig(os.path.join(args.fig_root, str(ts),"BCE_summary.png"),dpi=300)
+    if args.variational:
+        plt.clf()
+        plt.plot(logs['KL divergence'], label='KL divergence')
+        plt.savefig(os.path.join(args.fig_root, str(ts),"KL_summary.png"),dpi=300)
+        
+        plt.clf()
+        plt.plot(logs['binary cross entropy'], label='Binary Cross Entropy')
+        plt.savefig(os.path.join(args.fig_root, str(ts),"BCE_summary.png"),dpi=300)
 
 if __name__ == '__main__':
 
@@ -161,6 +174,7 @@ if __name__ == '__main__':
     parser.add_argument("--print_every", type=int, default=100)
     parser.add_argument("--fig_root", type=str, default='figs')
     parser.add_argument("--conditional", action='store_true')
+    parser.add_argument("--variational", action='store_true')
 
     args = parser.parse_args()
 

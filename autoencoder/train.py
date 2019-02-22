@@ -5,6 +5,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 import time
 import torch
+import random
 import argparse
 import pandas as pd
 import seaborn as sns
@@ -78,7 +79,6 @@ def main(args):
                 tracker_epoch[id]['y'] = z[i, 1].item()
                 tracker_epoch[id]['label'] = yi.item()
             
-            """TODO compute right loss in non variationnal case"""
             """Compute loss"""
             if args.variational:                
                 loss = loss_fn(recon_x, x, mean, log_var)
@@ -113,6 +113,7 @@ def main(args):
                     x = vae.inference(n=c.size(0), c=c)
                 else:
                     x = vae.inference(n=10)
+            
 
                 plt.figure()
                 plt.figure(figsize=(5, 10))
@@ -133,6 +134,48 @@ def main(args):
                 plt.savefig(
                     os.path.join(args.fig_root, str(ts),
                                  "E{:d}I{:d}.png".format(epoch, iteration)),
+                    dpi=300)
+                plt.clf()
+                plt.close('all')
+                
+                """Reconstruction of already existing images"""
+                rnd_id = random.sample(range(1, len(dataset)), 5)
+                x = [dataset[i][0] for i in rnd_id]
+                x = torch.stack(x)
+                x = x.to(device)
+                for i in range(5):
+                    print("vae size",vae(x[i])[0].view(1,28, 28).shape)
+                    x = torch.cat((x,vae(x[i])[0].view(1,1,28, 28)),0)
+                
+                
+                
+                plt.figure()
+                plt.figure(figsize=(5, 10))
+                for p in range(5):
+                    plt.subplot(5, 2, 2*p+1)
+                    if args.conditional:
+                        plt.text(
+                            0, 0, "c={:d}".format(c[p].item()), color='black',
+                            backgroundcolor='white', fontsize=8)
+                    plt.imshow(x[p].view(28, 28).data.cpu().numpy())
+                    plt.axis('off')
+                    
+                    plt.subplot(5, 2, 2*p+2)
+                    if args.conditional:
+                        plt.text(
+                            0, 0, "c={:d}".format(c[p].item()), color='black',
+                            backgroundcolor='white', fontsize=8)
+                    plt.imshow(x[p+5].view(28, 28).data.cpu().numpy())
+                    plt.axis('off')
+
+                if not os.path.exists(os.path.join(args.fig_root, str(ts))):
+                    if not(os.path.exists(os.path.join(args.fig_root))):
+                        os.mkdir(os.path.join(args.fig_root))
+                    os.mkdir(os.path.join(args.fig_root, str(ts)))
+
+                plt.savefig(
+                    os.path.join(args.fig_root, str(ts),
+                                 "Reconstruction E{:d}I{:d}.png".format(epoch, iteration)),
                     dpi=300)
                 plt.clf()
                 plt.close('all')

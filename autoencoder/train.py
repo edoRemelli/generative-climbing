@@ -80,16 +80,16 @@ def main(args):
                 tracker_epoch[id]['label'] = yi.item()
             
             """Compute loss"""
-            if args.variational:                
+            if args.variational or args.conditional:                
                 loss = loss_fn(recon_x, x, mean, log_var)
                 """Compute KL divergence and binary crossentropy"""
-                diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-                bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+                diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/ x.size(0)
+                bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
                 logs['KL divergence'].append(-diverge.item())
                 logs['binary cross entropy'].append(bce.item())
                 
             else:
-                loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+                loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
             
 
             optimizer.zero_grad()
@@ -143,9 +143,17 @@ def main(args):
                 x = [dataset[i][0] for i in rnd_id]
                 x = torch.stack(x)
                 x = x.to(device)
+                
+                c = [dataset[i][1] for i in rnd_id]
+                c = torch.stack(c).view(5,1)
+                c = c.to(device)
+                
+                
                 for i in range(5):
-                    print("vae size",vae(x[i])[0].view(1,28, 28).shape)
-                    x = torch.cat((x,vae(x[i])[0].view(1,1,28, 28)),0)
+                    if not args.conditional:
+                        x = torch.cat((x,vae(x[i])[0].view(1,1,28, 28)),0)
+                    else:
+                        x = torch.cat((x,vae(x[i],c[i])[0].view(1,1,28, 28)),0)
                 
                 
                 
@@ -183,7 +191,7 @@ def main(args):
         """Print the points of the latent space"""
         df = pd.DataFrame.from_dict(tracker_epoch, orient='index')
         g = sns.lmplot(
-            x='x', y='y', hue='label', data=df.groupby('label').head(100),
+            x='x', y='y', hue='label', data=df.groupby('label').head(200),
             fit_reg=False, legend=True)
         g.savefig(os.path.join(
             args.fig_root, str(ts), "E{:d}-Dist.png".format(epoch)),

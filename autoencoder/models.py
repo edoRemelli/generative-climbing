@@ -15,6 +15,7 @@ class VAE(nn.Module):
             assert num_labels > 0
         
         self.variational = variational
+        self.conditional = conditional
 
         assert type(encoder_layer_sizes) == list
         assert type(latent_size) == int
@@ -35,9 +36,12 @@ class VAE(nn.Module):
         batch_size = x.size(0)
         
         """If variational, we compute gaussian parameters"""
-        if self.variational:
+        if self.variational or self.conditional:
 
-            means, log_var = self.encoder(x, c)
+            if self.conditional:
+                means, log_var = self.encoder(x, c)
+            else:
+                means, log_var = self.encoder(x)
     
             std = torch.exp(0.5 * log_var)
             eps = torch.randn([batch_size, self.latent_size])
@@ -80,7 +84,7 @@ class Encoder(nn.Module):
                 name="L{:d}".format(i), module=nn.Linear(in_size, out_size))
             self.MLP.add_module(name="A{:d}".format(i), module=nn.ReLU())
 
-        if self.variational:
+        if self.variational or self.conditional:
             self.linear_means = nn.Linear(layer_sizes[-1], latent_size)
             self.linear_log_var = nn.Linear(layer_sizes[-1], latent_size)
         else:
@@ -89,12 +93,13 @@ class Encoder(nn.Module):
     def forward(self, x, c=None):
 
         if self.conditional:
+            
             c = idx2onehot(c, n=10)
             x = torch.cat((x, c), dim=-1)
 
         x = self.MLP(x)
         
-        if not self.variational:
+        if not (self.variational or self.conditional):
             return self.linear_z(x)
 
         means = self.linear_means(x)

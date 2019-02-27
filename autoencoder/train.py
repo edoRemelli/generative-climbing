@@ -14,6 +14,8 @@ from torchvision import transforms
 from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 from collections import defaultdict
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 
 from models import VAE
 
@@ -41,6 +43,7 @@ def main(args):
     def loss_fn(recon_x, x, mean, log_var):
         BCE = torch.nn.functional.binary_cross_entropy(
             recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+        #BCE = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
         return (BCE + KLD) / x.size(0)
@@ -75,8 +78,8 @@ def main(args):
 
             for i, yi in enumerate(y):
                 id = len(tracker_epoch)
-                tracker_epoch[id]['x'] = z[i, 0].item()
-                tracker_epoch[id]['y'] = z[i, 1].item()
+                for j in range(args.latent_size):
+                    tracker_epoch[id][str(j)] = z[i, j].item()
                 tracker_epoch[id]['label'] = yi.item()
             
             """Compute loss"""
@@ -84,12 +87,14 @@ def main(args):
                 loss = loss_fn(recon_x, x, mean, log_var)
                 """Compute KL divergence and binary crossentropy"""
                 diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/ x.size(0)
-                bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
+                #bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
+                bce = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 logs['KL divergence'].append(-diverge.item())
                 logs['binary cross entropy'].append(bce.item())
                 
             else:
-                loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
+                loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                #loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
             
 
             optimizer.zero_grad()
@@ -100,7 +105,7 @@ def main(args):
             
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
-                if args.variational:
+                if args.variational or args.conditional:
                     print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} BCE {:f}".format(
                         epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), bce.item()))
                 else:
@@ -190,9 +195,38 @@ def main(args):
         
         """Print the points of the latent space"""
         df = pd.DataFrame.from_dict(tracker_epoch, orient='index')
-        g = sns.lmplot(
-            x='x', y='y', hue='label', data=df.groupby('label').head(200),
+
+        if args.representation == None:
+            g = sns.lmplot(
+            x='0', y='1', hue='label', data=df.groupby('label').head(100),
             fit_reg=False, legend=True)
+
+        elif args.representation == "PCA":
+            pca = PCA(n_components=2)
+            feat_cols = [str(i) for i in range(args.latent_size)]
+            pca_result = pca.fit_transform(df[feat_cols].values)
+            df['pca-one'] = pca_result[:,0]
+            df['pca-two'] = pca_result[:,1]
+            print('Explained variation per principal component: {}'.format(pca.explained_variance_ratio_))
+            g = sns.lmplot(
+            x='pca-one', y='pca-two', hue='label', data=df.groupby('label').head(100),
+            fit_reg=False, legend=True)
+
+        elif args.representation == "TSNE":     
+            time_start = time.time()  
+            feat_cols = [str(i) for i in range(args.latent_size)] 
+            tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=1000)
+            tsne_results = tsne.fit_transform(df[feat_cols].head(500).values)
+            df_tsne = df.head(500).copy()
+            df_tsne['x-tsne'] = tsne_results[:,0]
+            df_tsne['y-tsne'] = tsne_results[:,1]
+
+            print('t-SNE done! Time elapsed: {} seconds'.format(time.time()-time_start))
+
+            g = sns.lmplot(
+            x='x-tsne', y='y-tsne', hue='label', data=df_tsne.groupby('label').head(500),
+            fit_reg=False, legend=True)
+        
         g.savefig(os.path.join(
             args.fig_root, str(ts), "E{:d}-Dist.png".format(epoch)),
             dpi=300)
@@ -203,7 +237,7 @@ def main(args):
     plt.plot(logs['loss'], label='Loss')
     plt.savefig(os.path.join(args.fig_root, str(ts),"loss_summary.png"),dpi=300)
     
-    if args.variational:
+    if args.variational or args.conditional:
         plt.clf()
         plt.plot(logs['KL divergence'], label='KL divergence')
         plt.savefig(os.path.join(args.fig_root, str(ts),"KL_summary.png"),dpi=300)
@@ -224,6 +258,8 @@ if __name__ == '__main__':
     parser.add_argument("--latent_size", type=int, default=2)
     parser.add_argument("--print_every", type=int, default=100)
     parser.add_argument("--fig_root", type=str, default='figs')
+    parser.add_argument("--representation", type=str, default=None)
+    parser.add_argument("--loss", type=str, default=None)
     parser.add_argument("--conditional", action='store_true')
     parser.add_argument("--variational", action='store_true')
 

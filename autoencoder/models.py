@@ -28,7 +28,7 @@ class VAE(nn.Module):
         self.decoder = Decoder(
             decoder_layer_sizes, latent_size, conditional, variational, num_labels)
 
-    def forward(self, x, c=None):
+    def forward(self, x, c=None, testing = False):
 
         if x.dim() > 2:
             x = x.view(-1, 28*28)
@@ -45,7 +45,10 @@ class VAE(nn.Module):
     
             std = torch.exp(0.5 * log_var)
             eps = torch.randn([batch_size, self.latent_size])
-            z = eps * std + means
+            if testing:
+                z = means
+            else:
+                z = eps * std + means
     
             recon_x = self.decoder(z, c)
     

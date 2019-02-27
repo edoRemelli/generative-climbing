@@ -8,3 +8,4 @@ autoencoder/data/raw/train-images-idx3-ubyte
 autoencoder/data/raw/train-labels-idx1-ubyte
 *.pt
 autoencoder/figs/*
+autoencoder/E9-Dist.png

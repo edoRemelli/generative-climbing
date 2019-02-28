@@ -33,26 +33,29 @@ def main(args):
 
 
     """Load the dataset"""
-    dataset = MNIST(
+    dataset_train = MNIST(
         root='data', train=True, transform=transforms.ToTensor(),
         download=True)
+    dataset_test = MNIST(
+        root='data', train=False, transform=transforms.ToTensor(),
+        download=True)
     data_loader = DataLoader(
-        dataset=dataset, batch_size=args.batch_size, shuffle=True)
+        dataset=dataset_train, batch_size=args.batch_size, shuffle=True)
+    data_loader_test = DataLoader(
+        dataset=dataset_test, batch_size=args.batch_size, shuffle=True)
 
     """Define the loss"""
     def loss_fn(recon_x, x, mean, log_var):
         if args.loss == "BCE":
             recon_loss = torch.nn.functional.binary_cross_entropy(
-            recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+            recon_x.view(-1, 28*28), x.view(-1, 28*28))
         elif args.loss == "MSE":
             recon_loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
         elif args.loss == "L1":
             recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
-        #elif args.loss == "Hinge":
-        #    recon_loss = torch.nn.MarginRankingLoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
-        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/x.size(0)
 
-        return (recon_loss + KLD) / x.size(0)
+        return (recon_loss + KLD) 
 
     vae = VAE(
         encoder_layer_sizes=args.encoder_layer_sizes,
@@ -69,6 +72,8 @@ def main(args):
     for epoch in range(args.epochs):
 
         tracker_epoch = defaultdict(lambda: defaultdict(dict))
+
+        """Do training"""
 
         for iteration, (x, y) in enumerate(data_loader):
             """Send data to GPU"""
@@ -94,11 +99,11 @@ def main(args):
             if args.variational or args.conditional:                
                 loss = loss_fn(recon_x, x, mean, log_var)
                 """Compute KL divergence and binary crossentropy"""
-                diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/ x.size(0)
+                diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp()) / x.size(0)
                 if args.loss == "MSE":
                     recon_loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 elif args.loss == "BCE":
-                    recon_loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0) 
+                    recon_loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
                 elif args.loss == "L1":
                     recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 #elif args.loss == "Hinge":
@@ -110,7 +115,7 @@ def main(args):
                 if args.loss == "MSE":
                     loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 elif args.loss == "BCE":
-                    loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0) 
+                    loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
                 elif args.loss == "L1":
                     loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 #elif args.loss == "Hinge":
@@ -121,16 +126,16 @@ def main(args):
             loss.backward()
             optimizer.step()
 
-            logs['loss'].append(loss.item())
+            logs['loss'].append(loss.item()/x.size(0))
             
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
                 if args.variational or args.conditional:
-                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} Reconstruction loss {:f}".format(
-                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), recon_loss.item()))
+                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:f} KL {:f} Recon loss {:f}".format(
+                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), recon_loss.item()))
                 else:
-                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} ".format(
-                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item()))
+                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:f} ".format(
+                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item()))
                 
                 """Create images from only latent variable"""
                 if args.conditional:
@@ -164,12 +169,12 @@ def main(args):
                 plt.close('all')
                 
                 """Reconstruction of already existing images"""
-                rnd_id = random.sample(range(1, len(dataset)), 5)
-                x = [dataset[i][0] for i in rnd_id]
+                rnd_id = random.sample(range(1, len(dataset_test)), 5)
+                x = [dataset_test[i][0] for i in rnd_id]
                 x = torch.stack(x)
                 x = x.to(device)
                 
-                c = [dataset[i][1] for i in rnd_id]
+                c = [dataset_test[i][1] for i in rnd_id]
                 c = torch.stack(c).view(5,1)
                 c = c.to(device)
                 
@@ -212,6 +217,41 @@ def main(args):
                     dpi=300)
                 plt.clf()
                 plt.close('all')
+
+        """Test model"""
+        test_loss = 0
+        with torch.no_grad():
+            bs = 0
+            for iteration, (x, y) in enumerate(data_loader_test):
+                """Send data to GPU"""
+                x, y = x.to(device), y.to(device)
+
+                """CVAE or VAE generates data"""
+                if args.conditional:
+                    recon_x, mean, log_var, z = vae(x, y, testing = True)
+                elif args.variational:
+                    recon_x, mean, log_var, z = vae(x, testing = True)
+                else:
+                    recon_x, z = vae(x, testing = True)
+
+                if not args.conditional and not args.variational:
+
+                    if args.loss == "MSE":
+                        loss_res = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                    elif args.loss == "BCE":
+                        loss_res = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
+                    elif args.loss == "L1":
+                        loss_res = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
+                else:
+                    loss_res = loss_fn(recon_x, x, mean, log_var) 
+                test_loss += loss_res.item() * x.size(0)
+
+        test_loss /= len(data_loader_test.dataset)
+
+        logs['test loss'].append(test_loss)
+
+        print("Test loss : ", test_loss)
+
         
         """Print the points of the latent space"""
         df = pd.DataFrame.from_dict(tracker_epoch, orient='index')
@@ -256,6 +296,10 @@ def main(args):
     plt.clf()
     plt.plot(logs['loss'], label='Loss')
     plt.savefig(os.path.join(args.fig_root, str(ts),"loss_summary.png"),dpi=300)
+
+    plt.clf()
+    plt.plot(logs['test loss'], label='Test Loss')
+    plt.savefig(os.path.join(args.fig_root, str(ts),"test_loss_summary.png"),dpi=300)
     
     if args.variational or args.conditional:
         plt.clf()
@@ -279,7 +323,7 @@ if __name__ == '__main__':
     parser.add_argument("--print_every", type=int, default=100)
     parser.add_argument("--fig_root", type=str, default='figs')
     parser.add_argument("--representation", type=str, default=None)
-    parser.add_argument("--loss", type=str, default="MSE")
+    parser.add_argument("--loss", type=str, default="BCE")
     parser.add_argument("--conditional", action='store_true')
     parser.add_argument("--variational", action='store_true')
 

@@ -41,12 +41,18 @@ def main(args):
 
     """Define the loss"""
     def loss_fn(recon_x, x, mean, log_var):
-        BCE = torch.nn.functional.binary_cross_entropy(
+        if args.loss == "BCE":
+            recon_loss = torch.nn.functional.binary_cross_entropy(
             recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
-        #BCE = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        elif args.loss == "MSE":
+            recon_loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        elif args.loss == "L1":
+            recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        #elif args.loss == "Hinge":
+        #    recon_loss = torch.nn.MarginRankingLoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
-        return (BCE + KLD) / x.size(0)
+        return (recon_loss + KLD) / x.size(0)
 
     vae = VAE(
         encoder_layer_sizes=args.encoder_layer_sizes,
@@ -81,20 +87,34 @@ def main(args):
                 for j in range(args.latent_size):
                     tracker_epoch[id][str(j)] = z[i, j].item()
                 tracker_epoch[id]['label'] = yi.item()
+
+            
             
             """Compute loss"""
             if args.variational or args.conditional:                
                 loss = loss_fn(recon_x, x, mean, log_var)
                 """Compute KL divergence and binary crossentropy"""
                 diverge = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/ x.size(0)
-                #bce = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
-                bce = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                if args.loss == "MSE":
+                    recon_loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                elif args.loss == "BCE":
+                    recon_loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0) 
+                elif args.loss == "L1":
+                    recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                #elif args.loss == "Hinge":
+                #    recon_loss = torch.nn.MarginRankingLoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
                 logs['KL divergence'].append(-diverge.item())
-                logs['binary cross entropy'].append(bce.item())
+                logs['Reconstruction Loss'].append(recon_loss.item())
                 
             else:
-                loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
-                #loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0)
+                if args.loss == "MSE":
+                    loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                elif args.loss == "BCE":
+                    loss = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')/ x.size(0) 
+                elif args.loss == "L1":
+                    loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+                #elif args.loss == "Hinge":
+                #    loss = torch.nn.MarginRankingLoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
             
 
             optimizer.zero_grad()
@@ -106,8 +126,8 @@ def main(args):
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
                 if args.variational or args.conditional:
-                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} BCE {:f}".format(
-                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), bce.item()))
+                    print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} KL {:f} Reconstruction loss {:f}".format(
+                        epoch, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), recon_loss.item()))
                 else:
                     print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f} ".format(
                         epoch, args.epochs, iteration, len(data_loader)-1, loss.item()))
@@ -156,9 +176,9 @@ def main(args):
                 
                 for i in range(5):
                     if not args.conditional:
-                        x = torch.cat((x,vae(x[i])[0].view(1,1,28, 28)),0)
+                        x = torch.cat((x,vae(x[i], testing = True)[0].view(1,1,28, 28)),0)
                     else:
-                        x = torch.cat((x,vae(x[i],c[i])[0].view(1,1,28, 28)),0)
+                        x = torch.cat((x,vae(x[i],c[i], testing = True)[0].view(1,1,28, 28)),0)
                 
                 
                 
@@ -243,8 +263,8 @@ def main(args):
         plt.savefig(os.path.join(args.fig_root, str(ts),"KL_summary.png"),dpi=300)
         
         plt.clf()
-        plt.plot(logs['binary cross entropy'], label='Binary Cross Entropy')
-        plt.savefig(os.path.join(args.fig_root, str(ts),"BCE_summary.png"),dpi=300)
+        plt.plot(logs['Reconstruction Loss'], label='Reconstruction Loss')
+        plt.savefig(os.path.join(args.fig_root, str(ts),"reconstruction_summary.png"),dpi=300)
 
 if __name__ == '__main__':
 
@@ -259,7 +279,7 @@ if __name__ == '__main__':
     parser.add_argument("--print_every", type=int, default=100)
     parser.add_argument("--fig_root", type=str, default='figs')
     parser.add_argument("--representation", type=str, default=None)
-    parser.add_argument("--loss", type=str, default=None)
+    parser.add_argument("--loss", type=str, default="MSE")
     parser.add_argument("--conditional", action='store_true')
     parser.add_argument("--variational", action='store_true')
 

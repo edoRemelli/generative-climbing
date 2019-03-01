@@ -57,6 +57,18 @@ def main(args):
 
         return (recon_loss + KLD) 
 
+    def test_loss_fn(recon_x, x, mean, log_var):
+        if args.loss == "BCE":
+            recon_loss = torch.nn.functional.binary_cross_entropy(
+            recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        elif args.loss == "MSE":
+            recon_loss = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        elif args.loss == "L1":
+            recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
+        KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/x.size(0)
+
+        return (recon_loss + KLD) 
+
     vae = VAE(
         encoder_layer_sizes=args.encoder_layer_sizes,
         latent_size=args.latent_size,
@@ -236,14 +248,14 @@ def main(args):
 
                 if not args.conditional and not args.variational:
 
-                    if args.loss == "MSE":
+                    if args.test_loss == "MSE":
                         loss_res = torch.nn.MSELoss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
-                    elif args.loss == "BCE":
+                    elif args.test_loss == "BCE":
                         loss_res = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
-                    elif args.loss == "L1":
+                    elif args.test_loss == "L1":
                         loss_res = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28)) 
                 else:
-                    loss_res = loss_fn(recon_x, x, mean, log_var) 
+                    loss_res = test_loss_fn(recon_x, x, mean, log_var) 
                 test_loss += loss_res.item() * x.size(0)
 
         test_loss /= len(data_loader_test.dataset)
@@ -324,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument("--fig_root", type=str, default='figs')
     parser.add_argument("--representation", type=str, default=None)
     parser.add_argument("--loss", type=str, default="BCE")
+    parser.add_argument("--test_loss", type=str, default="BCE")
     parser.add_argument("--conditional", action='store_true')
     parser.add_argument("--variational", action='store_true')
 

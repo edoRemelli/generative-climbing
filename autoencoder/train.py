@@ -17,10 +17,15 @@ from collections import defaultdict
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 
-from models import VAE
+
 
 
 def main(args):
+
+    if args.net == "ResNet":
+        from models_resnet import VAE
+    else:
+        from models import VAE
 
     torch.manual_seed(args.seed)
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -46,6 +51,12 @@ def main(args):
 
     """Define the loss"""
     def loss_fn(recon_x, x, mean, log_var):
+        """
+            recon_x : reconstructed x after being through VAE or CVAE
+            x : original x
+            mean : center of the gaussian in average
+            log_var : related to the standard deviation 
+        """
         if args.loss == "BCE":
             recon_loss = torch.nn.functional.binary_cross_entropy(
             recon_x.view(-1, 28*28), x.view(-1, 28*28))
@@ -191,11 +202,13 @@ def main(args):
                 c = c.to(device)
                 
                 
-                for i in range(5):
-                    if not args.conditional:
-                        x = torch.cat((x,vae(x[i], testing = True)[0].view(1,1,28, 28)),0)
-                    else:
-                        x = torch.cat((x,vae(x[i],c[i], testing = True)[0].view(1,1,28, 28)),0)
+                
+                if not args.conditional:
+
+                    x = torch.cat((x,vae(x, testing = True)[0].view(5,1,28, 28)),0)
+                else:
+                    x = torch.cat((x,vae(x,c, testing = True)[0].view(5,1,28, 28)),0)
+                
                 
                 
                 
@@ -337,6 +350,7 @@ if __name__ == '__main__':
     parser.add_argument("--representation", type=str, default=None)
     parser.add_argument("--loss", type=str, default="BCE")
     parser.add_argument("--test_loss", type=str, default="BCE")
+    parser.add_argument("--net", type=str, default="")
     parser.add_argument("--conditional", action='store_true')
     parser.add_argument("--variational", action='store_true')
 

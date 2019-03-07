@@ -10,3 +10,6 @@ autoencoder/data/raw/train-labels-idx1-ubyte
 autoencoder/figs/*
 autoencoder/E9-Dist.png
 .vscode/settings.json
+autoencoder/resnet2D.py
+autoencoder/resnet.py
+autoencoder/resnet.py

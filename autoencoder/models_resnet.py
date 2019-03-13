@@ -80,13 +80,13 @@ class Encoder(nn.Module):
         if self.conditional:
             layer_sizes[0] += num_labels
 
-        self.model = ResNet([2, 2, 2, 2], 4, start_planes=1, start_padding=2, latent_size=latent_size)
+        self.model = ResNet([1, 1, 1, 1], 4, start_planes=1, start_padding=2, latent_size=latent_size)
 
-        """if self.variational or self.conditional:
-            self.linear_means = nn.Linear(layer_sizes[-1], latent_size)
-            self.linear_log_var = nn.Linear(layer_sizes[-1], latent_size)
+        if self.variational or self.conditional:
+            self.linear_means = nn.Linear(4*7*7, latent_size)
+            self.linear_log_var = nn.Linear(4*7*7, latent_size)
         else:
-            self.linear_z = nn.Linear(layer_sizes[-1], latent_size)"""
+            self.linear_z = nn.Linear(4*7*7, latent_size)
 
     def forward(self, x, c=None):
         """if self.conditional:
@@ -94,15 +94,14 @@ class Encoder(nn.Module):
             c = idx2onehot(c, n=10)
             x = torch.cat((x, c), dim=-1)"""
 
-        z = self.model(x)
-        return z
-        """if not (self.variational or self.conditional):
+        x = self.model(x)
+        if not (self.variational or self.conditional):
             return self.linear_z(x)
 
         means = self.linear_means(x)
         log_vars = self.linear_log_var(x)
 
-        return means, log_vars"""
+        return means, log_vars
 
 
 class Decoder(nn.Module):
@@ -270,7 +269,7 @@ class ResNet(nn.Module):
         x = self.conv2(x)
         x = self.bn2(x)
         x = x.view([-1,4*7*7])
-        x = self.fc(x)
+        #x = self.fc(x)
 
         return x
 

@@ -24,6 +24,8 @@ def main(args):
 
     if args.net == "ResNet":
         from models_resnet import VAE
+    elif args.net == "conv":
+        from models_conv import VAE
     else:
         from models import VAE
 
@@ -66,7 +68,7 @@ def main(args):
             recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/x.size(0)
 
-        return (recon_loss + KLD) 
+        return (args.lambd * recon_loss +  KLD) 
 
     def test_loss_fn(recon_x, x, mean, log_var):
         if args.loss == "BCE":
@@ -78,7 +80,7 @@ def main(args):
             recon_loss = torch.nn.L1Loss()(recon_x.view(-1, 28*28), x.view(-1, 28*28))
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())/x.size(0)
 
-        return (recon_loss + KLD) 
+        return (args.lambd * recon_loss + KLD) 
 
     vae = VAE(
         encoder_layer_sizes=args.encoder_layer_sizes,
@@ -89,6 +91,10 @@ def main(args):
 
     """Define the optimizer"""
     optimizer = torch.optim.Adam(vae.parameters(), lr=args.learning_rate)
+
+    
+    """Prints the number of parameters in the model"""
+    print(sum(p.numel() for p in vae.parameters()))
 
     logs = defaultdict(list)
 
@@ -340,6 +346,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--lambd", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--encoder_layer_sizes", type=list, default=[784, 256])

@@ -160,11 +160,15 @@ def main(args):
 
             if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
                 if args.variational or args.conditional:
+                    print(" "*50, end="\r")
                     print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:f} KL {:f} Recon loss {:f}".format(
-                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), recon_loss.item()))
+                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item(), diverge.item(), recon_loss.item()), end="\r")
+                    
                 else:
+                    print(" "*50, end="\r")
                     print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:f} ".format(
-                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item()))
+                        epoch+1, args.epochs, iteration, len(data_loader)-1, loss.item()), end="\r")
+                
                 
                 """Create images from only latent variable"""
                 if args.conditional:
@@ -248,6 +252,7 @@ def main(args):
                     dpi=300)
                 plt.clf()
                 plt.close('all')
+        print("")
 
         """Test model"""
         test_loss = 0

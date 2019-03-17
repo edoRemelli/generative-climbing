@@ -80,20 +80,27 @@ class Encoder(nn.Module):
         if self.conditional:
             layer_sizes[0] += num_labels
 
-        self.model = ResNet([1, 1, 1, 1], 4, start_planes=1, start_padding=2, latent_size=latent_size)
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3,
+                               bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.model = ResNet([1, 1, 1, 1], 4, start_planes=64, start_padding=2, latent_size=latent_size)
 
         if self.variational or self.conditional:
-            self.linear_means = nn.Linear(4*7*7, latent_size)
-            self.linear_log_var = nn.Linear(4*7*7, latent_size)
+            self.linear_means = nn.Linear(128*7*7, latent_size)
+            self.linear_log_var = nn.Linear(128*7*7, latent_size)
         else:
-            self.linear_z = nn.Linear(4*7*7, latent_size)
+            self.linear_z = nn.Linear(128*7*7, latent_size)
 
     def forward(self, x, c=None):
-        """if self.conditional:
-
-            c = idx2onehot(c, n=10)
-            x = torch.cat((x, c), dim=-1)"""
-
+        if self.conditional:
+            c = idx2onehot(c, n=28)
+            c = c.reshape(-1,1,  28, 1)
+            x = torch.cat((x, c), dim=-1)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
         x = self.model(x)
         if not (self.variational or self.conditional):
             return self.linear_z(x)
@@ -110,7 +117,7 @@ class Decoder(nn.Module):
 
         super().__init__()
 
-        self.model = ResNet_inv(1, (4,7,7), [1, 1, 1, 1], latent_size=latent_size)
+        self.model = ResNet_inv(1, (128,7,7), [1, 1, 1, 1], latent_size=latent_size)
 
         self.conditional = conditional
         self.variational = variational
@@ -166,7 +173,6 @@ class BasicBlock(nn.Module):
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
         out = self.conv2(out)
         out = self.bn2(out)
 
@@ -234,12 +240,10 @@ class ResNet(nn.Module):
 
         self.layer1 = self._make_layer(block, start_planes, layers[0], padding= start_padding)
         self.layer2 = self._make_layer(block, start_planes*2, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, start_planes*4, layers[2], stride=2)
+        #self.layer3 = self._make_layer(block, start_planes*4, layers[2], stride=2)
 
-        self.conv2 = nn.Conv2d(start_planes * 4, start_planes * 4, kernel_size=1, padding=0)
-        self.bn2 = nn.BatchNorm2d(start_planes * 4)
-
-        self.fc = nn.Linear(4*7*7, latent_size)
+        self.conv2 = nn.Conv2d(start_planes * 2, start_planes * 2, kernel_size=1, padding=0)
+        self.bn2 = nn.BatchNorm2d(start_planes * 2)
 
 
     def _make_layer(self, block, planes, blocks, stride=1,padding = 0):
@@ -262,14 +266,12 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        #x = self.m(x)
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.layer3(x)
+        #x = self.layer3(x)
         x = self.conv2(x)
         x = self.bn2(x)
-        x = x.view([-1,4*7*7])
-        #x = self.fc(x)
+        x = x.view([-1,128*7*7])
 
         return x
 
@@ -280,11 +282,9 @@ class ResNet_inv(nn.Module):
                 shape,
                 layers,
                 latent_size = 2,
-                block = BasicBlockDecoder,
-                group_norm = True):
+                block = BasicBlockDecoder):
 
         super(ResNet_inv, self).__init__()
-        self.group_norm = group_norm
         self.inplanes = shape[0]
         self.shape = shape
 
@@ -292,7 +292,9 @@ class ResNet_inv(nn.Module):
         self.layer2 = self._make_layer(block, shape[0] // 2, layers[2], stride=2)
         self.layer3 = self._make_layer(block, shape[0] // 4, layers[1], stride=2)
 
-        self.fc = nn.Linear(latent_size, 4*7*7)
+        self.fc = nn.Linear(latent_size, 128*7*7)
+
+        self.c1 = nn.ConvTranspose2d(32, 1, 1, stride = 1)  # b, 16, 5, 5
 
 
 
@@ -318,6 +320,7 @@ class ResNet_inv(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
+        x = self.c1(x)
         x = nn.Sigmoid()(x)
 
         return x

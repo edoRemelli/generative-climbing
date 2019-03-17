@@ -103,19 +103,24 @@ class Encoder(nn.Module):
             c = idx2onehot(c, n=28)
             c = c.reshape(-1,1,  28, 1)
             x = torch.cat((x, c), dim=-1)
+            
+        print(x.shape)
         x = self.conv1(x)
+        print(x.shape)
         x = self.pool(x)
         x = self.relu(x)
         x = self.conv2(x)
+        print(x.shape)
         x = self.pool(x)
         x = self.relu(x)
         x = self.conv3(x)
+        print(x.shape)
         x = self.pool(x)
         x = self.relu(x)
         
         x = x.view([-1,128*4*4])
         #x = self.fc(x)
-        #print(x.shape)
+        print(x.shape)
         
         if not (self.variational or self.conditional):
             return self.linear_z(x)

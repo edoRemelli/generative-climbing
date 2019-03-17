@@ -80,9 +80,10 @@ class Encoder(nn.Module):
         if self.conditional:
             layer_sizes[0] += num_labels
 
-        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
+        self.pool = nn.MaxPool2d(2)
         self.relu = nn.ReLU(inplace=True)
 
         self.model = ResNet([1, 1, 1, 1], 4, start_planes=64, start_padding=2, latent_size=latent_size)
@@ -100,6 +101,7 @@ class Encoder(nn.Module):
             x = torch.cat((x, c), dim=-1)
         x = self.conv1(x)
         x = self.bn1(x)
+        x = self.pool(x)
         x = self.relu(x)
         x = self.model(x)
         if not (self.variational or self.conditional):
@@ -117,14 +119,18 @@ class Decoder(nn.Module):
 
         super().__init__()
 
-        self.model = ResNet_inv(1, (128,7,7), [1, 1, 1, 1], latent_size=latent_size)
-
         self.conditional = conditional
         self.variational = variational
+
         if self.conditional:
             input_size = latent_size + num_labels
         else:
             input_size = latent_size
+
+        self.model = ResNet_inv(1, (128,7,7), [1, 1, 1, 1], latent_size=input_size)
+
+        
+        
 
 
     def forward(self, z, c):
@@ -266,6 +272,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        
         x = self.layer1(x)
         x = self.layer2(x)
         #x = self.layer3(x)

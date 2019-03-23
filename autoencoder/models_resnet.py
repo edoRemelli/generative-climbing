@@ -30,8 +30,6 @@ class VAE(nn.Module):
 
     def forward(self, x, c=None, testing=False):
 
-        #if x.dim() > 2:
-        #    x = x.view(-1, 28*28)
 
         batch_size = x.size(0)
 

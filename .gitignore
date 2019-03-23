@@ -14,3 +14,6 @@ autoencoder/resnet2D.py
 autoencoder/resnet.py
 autoencoder/resnet.py
 autoencoder/resnet.py
+VAEGAN/*.jpg
+VAEGAN/*.png
+*.json

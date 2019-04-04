@@ -78,7 +78,7 @@ class EncoderRes(nn.Module):
         self.conditional = conditional
         self.variational = variational
         if self.conditional:
-            layer_sizes[0] += num_labels
+            layer_sizes += num_labels
 
         self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1,
                                bias=False)

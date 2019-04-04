@@ -40,6 +40,7 @@ def str2bool(v):
 
 parser.add_argument('--resume_training', type=str2bool, default=False)
 parser.add_argument('--to_train', type=str2bool, default=True)
+parser.add_argument('--conditional', type=str2bool, default=False)
 
 opt = parser.parse_args()
 print(opt)
@@ -50,11 +51,12 @@ T.manual_seed(manual_seed)
 if T.cuda.is_available():
     T.cuda.manual_seed_all(manual_seed)
 
-train_loader = get_data_loader(opt)
+train_loader = get_data_loader(opt, True)
+test_loader = get_data_loader(opt, False)
 
 E = get_cuda(Encoder(opt))
 G = get_cuda(Generator(opt)).apply(weights_init)
-D = get_cuda(Discriminator()).apply(weights_init)
+D = get_cuda(Discriminator(opt)).apply(weights_init)
 
 device_ids = range(T.cuda.device_count())
 E = nn.DataParallel(E, device_ids)
@@ -66,27 +68,30 @@ G_trainer = T.optim.Adam(G.parameters(), lr=opt.lr_g, betas=(0.5, 0.999))
 D_trainer = T.optim.Adam(D.parameters(), lr=opt.lr_d, betas=(0.5, 0.999))
 
 
-def train_batch(x_original):
+def train_batch(x_original, y_original):
     batch_size = x_original.size(0)
     y_real = get_cuda(T.ones(batch_size))
     y_fake = get_cuda(T.zeros(batch_size))
 
     #Extract latent_z corresponding to real images
-    z, mean, log_var = E(x_original)
+    z, mean, log_var = E(x_original, y_original)
     kld = -0.5 * T.sum(1 + log_var - mean.pow(2) - log_var.exp()) / opt.batch_size
     #Extract fake images corresponding to real images
-    x_recon = G(z)
+    x_recon = G(z, y_original)
 
     #Extract latent_z corresponding to noise
     z_p = T.randn(batch_size, opt.n_z)
     z_p = get_cuda(z_p)
+
+    y_p = get_cuda(T.randint(0,10,(batch_size,)))
     #Extract fake images corresponding to noise
-    x_noise = G(z_p)
+    x_noise = G(z_p, y_p)
 
     #Compute D(x) for real and fake images along with their features
-    label_original, fd_r = D(x_original)
-    label_recon, fd_f = D(x_recon)
-    label_noise, fd_p = D(x_noise)
+    
+    label_original, fd_r = D(x_original, y_original)
+    label_recon, fd_f = D(x_recon, y_original)
+    label_noise, fd_p = D(x_noise, y_p)
 
     #------------Discriminator training------------------
     loss_D = F.binary_cross_entropy(label_original, y_real) + 0.5 * (F.binary_cross_entropy(label_recon, y_fake) + F.binary_cross_entropy(label_noise, y_fake))
@@ -109,6 +114,50 @@ def train_batch(x_original):
 
 
     return loss_D.item(), loss_G.item(), loss_GD.item(), kld.item()
+
+
+def test_batch(x_original, y_original):
+    batch_size = x_original.size(0)
+    y_real = get_cuda(T.ones(batch_size))
+    y_fake = get_cuda(T.zeros(batch_size))
+
+    #Extract latent_z corresponding to real images
+    z, mean, log_var = E(x_original, y_original)
+    kld = -0.5 * T.sum(1 + log_var - mean.pow(2) - log_var.exp()) / opt.batch_size
+    #Extract fake images corresponding to real images
+    x_recon = G(z, y_original)
+
+    #Extract latent_z corresponding to noise
+    z_p = T.randn(batch_size, opt.n_z)
+    z_p = get_cuda(z_p)
+
+    y_p = get_cuda(T.randint(0,10,(batch_size,)))
+    #Extract fake images corresponding to noise
+    x_noise = G(z_p, y_p)
+
+    #Compute D(x) for real and fake images along with their features
+    
+    label_original, fd_r = D(x_original, y_original)
+    label_recon, fd_f = D(x_recon, y_original)
+    label_noise, fd_p = D(x_noise, y_p)
+
+    #------------Discriminator training------------------
+    loss_D = F.binary_cross_entropy(label_original, y_real) + 0.5 * (F.binary_cross_entropy(label_recon, y_fake) + F.binary_cross_entropy(label_noise, y_fake))
+    
+    
+    acc_original = accuracy(y_original.cpu(), label_original.cpu())
+    acc_recon = accuracy(y_original.cpu(), label_original.cpu())
+    acc_noise = accuracy(y_original.cpu(), label_original.cpu())
+
+    #------------Encoder & Generator/Decoder training--------------
+
+    #loss corresponding to -log(D(G(z_p))), has to look good, GAN loss
+    loss_GD = F.binary_cross_entropy(label_noise, y_real)
+    #pixel wise matching loss and discriminator's feature matching loss, reconstruct well
+    loss_G = 0.5 * (0.01*(x_recon - x_original).pow(2).sum() + (fd_f - fd_r.detach()).pow(2).sum()) / batch_size
+
+
+    return loss_D.item(), loss_G.item(), loss_GD.item(), kld.item(), acc_noise,acc_original,acc_recon
 
 def load_model_from_checkpoint():
     global E, G, D, E_trainer, G_trainer, D_trainer
@@ -136,9 +185,11 @@ def training():
         T_loss_GD = []
         T_loss_kld = []
 
-        for x, _ in train_loader:
+
+
+        for x, y in train_loader:
             x = get_cuda(x)
-            loss_D, loss_G, loss_GD, loss_kld = train_batch(x)
+            loss_D, loss_G, loss_GD, loss_kld = train_batch(x,y)
             T_loss_D.append(loss_D)
             T_loss_G.append(loss_G)
             T_loss_GD.append(loss_GD)
@@ -150,7 +201,43 @@ def training():
         T_loss_GD = np.mean(T_loss_GD)
         T_loss_kld = np.mean(T_loss_kld)
 
-        print("epoch:", epoch, "loss_D:", "%.4f"%T_loss_D, "loss_G:", "%.4f"%T_loss_G, "loss_GD:", "%.4f"%T_loss_GD, "loss_kld:", "%.4f"%T_loss_kld)
+        print("epoch : ", epoch)
+
+        print("train -> loss_Discrim:", "%.4f"%T_loss_D, "loss_recon:", "%.4f"%T_loss_G, "loss_fool:", "%.4f"%T_loss_GD, "loss_kld:", "%.4f"%T_loss_kld)
+
+        ################ DO the testing
+
+        Test_loss_D = []
+        Test_loss_G = []
+        Test_loss_GD = []
+        Test_loss_kld = []
+        acc_1 = []
+        acc_2 = []
+        acc_3 = []
+        for x, y in test_loader:
+            x = get_cuda(x)
+            with T.no_grad():
+                loss_D, loss_G, loss_GD, loss_kld, acc_noise,acc_original,acc_recon = test_batch(x,y)
+            Test_loss_D.append(loss_D)
+            Test_loss_G.append(loss_G)
+            Test_loss_GD.append(loss_GD)
+            Test_loss_kld.append(loss_kld)
+            acc_1.append(acc_noise)
+            acc_2.append(acc_original)
+            acc_3.append(acc_recon)
+        
+        Test_loss_D = np.mean(Test_loss_D)
+        Test_loss_G = np.mean(Test_loss_G)
+        Test_loss_GD = np.mean(Test_loss_GD)
+        Test_loss_kld = np.mean(Test_loss_kld)
+
+        acc_n = np.mean(acc_1)
+        acc_o = np.mean(acc_2)
+        acc_r = np.mean(acc_3)
+
+        print("test  -> loss_Discrim:", "%.4f"%Test_loss_D, "loss_recon:", "%.4f"%Test_loss_G, "loss_fool:", "%.4f"%Test_loss_GD,
+            "loss_kld:", "%.4f"%Test_loss_kld, "accuracy noise ",int(acc_n*100)," accuracy orig ", int(acc_o*100),"accuracy recon ", int(acc_r*100))
+
 
         generate_samples("data/results/%d.jpg" % epoch)
         T.save({
@@ -165,19 +252,27 @@ def training():
 
 
 def generate_samples(img_name):
-    z_p = T.randn(opt.n_samples, opt.n_z)
+    z_p = T.randn(10, opt.n_z)
+    y_p = get_cuda(T.arange(0,10))
     z_p = get_cuda(z_p)
     E.eval()
     G.eval()
     D.eval()
     with T.autograd.no_grad():
-        x_p = G(z_p)
+        x_p = G(z_p, y_p)
     utils.save_image(x_p.cpu(), img_name, normalize=True, nrow=6)
+
+def accuracy(output, target):
+    """Computes the accuracy for multiple binary predictions"""
+    pred = output >= 0.5
+    truth = target >= 0.5
+    acc = pred.eq(truth).sum().item() / target.numel()
+    return acc
 
 def train_vae():
 
     vae = get_cuda(VAE(E,G))
-    optimizer = T.optim.Adam(vae.parameters(), lr=0.001)
+    optimizer = T.optim.Adam(vae.parameters(), lr=0.0025)
 
     for epoch in range(10):
 
@@ -188,8 +283,11 @@ def train_vae():
             """Send data to GPU"""
             x, y = get_cuda(x), get_cuda(y)
 
+            if opt.conditional:
+                recon_x, mean, log_var, z = vae(x,y)
+            else:
+                recon_x, mean, log_var, z = vae(x)
             
-            recon_x, mean, log_var, z = vae(x)
 
             """Compute loss"""                           
             loss = loss_fn(recon_x, x, mean, log_var)
